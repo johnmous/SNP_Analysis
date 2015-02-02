@@ -1,5 +1,5 @@
 ##########################################################################
-##  		R version 3.0.1 (2013-05-16) 			##
+##    	R version 3.0.1 (2013-05-16) 			##
 ##	Project 06.) Make overview of found variants			##
 ##	Data: 6 Samples of E.coli on IonProton (.bam)			##
 ##	Mapped: TMAP directly from IonReport				##
@@ -10,13 +10,18 @@
 ##	last edited: 18-09-2014						##
 ##########################################################################
 
+############# **************** ################
+# libraries to load
+library(seqinr)
+
+
 options(stringAsFactors = FALSE)
 
 # The directory where vcf files are stored
-path="/zfs/datastore0/group_root/MAD-RBAB/02_Collaborators/MAD1117-Ter_Kuile/MAD1117-P001-gDNA_sequencing/MAD1117-P001-E001_2014_32x_gDNA_Yanfang_svleeuw1/Results/TVC_Output/"
+path="/zfs/datastore0/group_root/MAD-RBAB/02_Collaborators/MAD1117-Ter_Kuile/MAD1117-P001-gDNA_sequencing/MAD1117-P001-E001_2014_32x_gDNA_Yanfang_svleeuw1/Scratch/reRun/VCFCompiled/"
 
 # Load reference sequence
-reference <- read.fasta(paste(path, "ps_LCT_PA102.fasta", sep=""), seqtype= "DNA")
+reference <- read.fasta(paste(path, "Wild-type_assembly.fasta", sep=""), seqtype= "DNA")
 # process the names of the contigs in reference so they match the annotation
 contigNames <- sapply(strsplit(names(reference), split="|", fixed =T), function(string) string[4] )
 contigNames <- sapply(strsplit(contigNames, split=".", fixed =T), function(string) string[1]) 
@@ -163,95 +168,95 @@ insertRow <- function(existingDF, newrow, r) {
 annotateSNPTable <- function (path, annotFile, tableOfSNPs) {
   
   
-    # read the annotation file & give columns more descriptive names
-    annotation <- read.table(paste(path, annotFile, sep = ""), sep="\t", head=TRUE, quote="", stringsAsFactors=FALSE)
-    # rename the columns of annotation table
-    names(annotation)[1] <- "seqname"
-    names(annotation)[4] <- "start"
-    names(annotation)[5] <- "end"
-    names(annotation)[6] <- "strand"
-    names(annotation)[7] <- "feature"
-    names(annotation)[8] <- "attribute"
+  # read the annotation file & give columns more descriptive names
+  annotation <- read.table(paste(path, annotFile, sep = ""), sep="\t", head=TRUE, quote="", stringsAsFactors=FALSE)
+  # rename the columns of annotation table
+  names(annotation)[1] <- "seqname"
+  names(annotation)[4] <- "start"
+  names(annotation)[5] <- "end"
+  names(annotation)[6] <- "strand"
+  names(annotation)[7] <- "feature"
+  names(annotation)[8] <- "attribute"
+  
+  contigsInAnnot <- unique(annotation$seqname)
+  annotationEnhanced <- data.frame()
+  # names(annotationEnhanced) <- names(annotation)
+  
+  for (contigID in contigsInAnnot) {
+    annotationSlice <- annotation[ annotation$seqname == contigID, ]
+    # row.names(annotationSlice) <- NULL
     
-    contigsInAnnot <- unique(annotation$seqname)
-    annotationEnhanced <- data.frame()
-    # names(annotationEnhanced) <- names(annotation)
+    # modify the annotation data.frame so a new line is added for every Non-annotated region. 
+    # Each of them should have a unique name in the "region" column
+    previousElementStopCoordinates = 0 
+    nonAnnotRegionCount = 0
+    previousElementStrand = "+"
     
-    for (contigID in contigsInAnnot) {
-      annotationSlice <- annotation[ annotation$seqname == contigID, ]
-      # row.names(annotationSlice) <- NULL
-
-      # modify the annotation data.frame so a new line is added for every Non-annotated region. 
-      # Each of them should have a unique name in the "region" column
-      previousElementStopCoordinates = 0 
-      nonAnnotRegionCount = 0
-      previousElementStrand = "+"
+    # save the last element's start coordinates to use it as a break trigger for the repeat loop
+    lastElementStartCoord = tail( annotationSlice$start, 1)
+    # this index is used to run over annotation table rows
+    i = 1
+    
+    # Add an extra line in the annotation table to create an entry for non annotated region elements
+    # Each elements bears a unique number to tell each other appart
+    # Repeat the loop until the last element of the the annotation table is reached
+    # Note the annotation table is mutatted as the loop proceeds adding an extra lines
+    repeat {
       
-      # save the last element's start coordinates to use it as a break trigger for the repeat loop
-      lastElementStartCoord = tail( annotationSlice$start, 1)
-      # this index is used to run over annotation table rows
-      i = 1
-      
-      # Add an extra line in the annotation table to create an entry for non annotated region elements
-      # Each elements bears a unique number to tell each other appart
-      # Repeat the loop until the last element of the the annotation table is reached
-      # Note the annotation table is mutatted as the loop proceeds adding an extra lines
-      repeat {
-
-        elementStartCoordinates <- as.numeric(annotationSlice$start[i]) 
-        elementStopCoordinates <- as.numeric(annotationSlice$end[i]) 
-        #  break the loop if the last element in the gff file is reached
-        if (elementStartCoordinates == lastElementStartCoord){
-          break
+      elementStartCoordinates <- as.numeric(annotationSlice$start[i]) 
+      elementStopCoordinates <- as.numeric(annotationSlice$end[i]) 
+      #  break the loop if the last element in the gff file is reached
+      if (elementStartCoordinates == lastElementStartCoord){
+        break
+      }
+      strand = "+"
+      gapBetweenElements <- elementStartCoordinates - previousElementStopCoordinates    
+      elementStrand = annotationSlice$strand[i]
+      # if there is a gap between genes => non coding region
+      if (gapBetweenElements > 1) {  
+        # extract genes before and after the non coding region
+        geneAfter <- annotationSlice$attribute[i]
+        geneBefore <- annotationSlice$attribute[i-1]
+        if ( elementStrand == "+" & previousElementStrand == "+") {
+          regionName <- paste("Downstream (+) Of", geneBefore, "||| Upstream Of (+)", geneAfter, sep=" " )
+          strand = "++"
         }
-        strand = "+"
-        gapBetweenElements <- elementStartCoordinates - previousElementStopCoordinates    
-        elementStrand = annotationSlice$strand[i]
-        # if there is a gap between genes => non coding region
-        if (gapBetweenElements > 1) {  
-          # extract genes before and after the non coding region
-          geneAfter <- annotationSlice$attribute[i]
-          geneBefore <- annotationSlice$attribute[i-1]
-          if ( elementStrand == "+" & previousElementStrand == "+") {
-            regionName <- paste("Downstream (+) Of", geneBefore, "||| Upstream Of (+)", geneAfter, sep=" " )
-            strand = "++"
-          }
-          else if ( elementStrand == "-" & previousElementStrand == "-") {
-            strand ="--"
-            regionName <- paste("Upstream (-) Of", geneBefore, "||| Downstream (-) Of", geneAfter, sep=" " ) 
-          }
-          else if ( elementStrand == "-" & previousElementStrand == "+") {
-            strand = "+-"
-            regionName <- paste("Downstream (+) Of", geneBefore, "||| Downstream (-) Of", geneAfter, sep=" " ) 
-          }
-          else if ( elementStrand == "+" & previousElementStrand == "-") {
-            strand = "-+"
-            regionName <- paste("Upstream (-) Of", geneBefore, "||| Upstream (+) Of", geneAfter, sep=" " ) 
-            
-          } else {
-            print("Something wrong there!!!!")
-          }
+        else if ( elementStrand == "-" & previousElementStrand == "-") {
+          strand ="--"
+          regionName <- paste("Upstream (-) Of", geneBefore, "||| Downstream (-) Of", geneAfter, sep=" " ) 
+        }
+        else if ( elementStrand == "-" & previousElementStrand == "+") {
+          strand = "+-"
+          regionName <- paste("Downstream (+) Of", geneBefore, "||| Downstream (-) Of", geneAfter, sep=" " ) 
+        }
+        else if ( elementStrand == "+" & previousElementStrand == "-") {
+          strand = "-+"
+          regionName <- paste("Upstream (-) Of", geneBefore, "||| Upstream (+) Of", geneAfter, sep=" " ) 
           
-          previousElementStrand <- elementStrand
-          newRow <- c( contigID, annotationSlice$source[1], "NonCoding", previousElementStopCoordinates+1, elementStartCoordinates-1, strand, "NonCoding", regionName ) 
-          previousElementStopCoordinates <- elementStopCoordinates
-          annotationSlice <- insertRow(annotationSlice, newRow, i)
-          i = i+1
-          
-        }else {
-          
+        } else {
+          print("Something wrong there!!!!")
+        }
+        
+        previousElementStrand <- elementStrand
+        newRow <- c( contigID, annotationSlice$source[1], "NonCoding", previousElementStopCoordinates+1, elementStartCoordinates-1, strand, "NonCoding", regionName ) 
+        previousElementStopCoordinates <- elementStopCoordinates
+        annotationSlice <- insertRow(annotationSlice, newRow, i)
+        i = i+1
+        
+      }else {
+        
         previousElementStopCoordinates <- elementStopCoordinates
         previousElementStrand <- elementStrand
         i = i+1
-        }
       }
-      annotationEnhanced <- rbind(annotationEnhanced, annotationSlice)
     }
-    
-    chromIDsTableOfSNPs  <- unique(tableOfSNPs$CHROM)
-    tableOfSNPsAnnotated <- data.frame()
-    
-    for (chromID in chromIDsTableOfSNPs) {
+    annotationEnhanced <- rbind(annotationEnhanced, annotationSlice)
+  }
+  
+  chromIDsTableOfSNPs  <- unique(tableOfSNPs$CHROM)
+  tableOfSNPsAnnotated <- data.frame()
+  
+  for (chromID in chromIDsTableOfSNPs) {
     
     sliceTableOfSNPs <- tableOfSNPs[tableOfSNPs$CHROM== chromID, ]
     SNPPos <- as.numeric(sliceTableOfSNPs$POS)
@@ -262,77 +267,77 @@ annotateSNPTable <- function (path, annotFile, tableOfSNPs) {
     
     # get the type of element(s) for each SNP 
     elements <- sapply(SNPPos, function(x) {
-                      positionOnTable <- which(sliceAnnotationEnhanced$start<=x & sliceAnnotationEnhanced$end>=x)
-                      elements <- sliceAnnotationEnhanced$feature[positionOnTable]
-                      # drop the NonAnnotRegion if other genomic elements are found along with it
-                      if (length(elements) > 1 && length(grep("NonCoding", elements))>=1 ) {
-                        index <- which(sapply("NonCoding", grepl, elements))
-                        elements <- elements[-index]
-                      }
-                      return(elements)
-                    })
+      positionOnTable <- which(sliceAnnotationEnhanced$start<=x & sliceAnnotationEnhanced$end>=x)
+      elements <- sliceAnnotationEnhanced$feature[positionOnTable]
+      # drop the NonAnnotRegion if other genomic elements are found along with it
+      if (length(elements) > 1 && length(grep("NonCoding", elements))>=1 ) {
+        index <- which(sapply("NonCoding", grepl, elements))
+        elements <- elements[-index]
+      }
+      return(elements)
+    })
     
     # replace empty vectors with "Non Annotated Region"
     elements[which(sapply(c(1:length(elements)), function (x) {length(elements[[x]])==0}))] <- "Non Annotated Region"
     
     # combine all elements of a vector into a single string, separated by comma
     elements <- sapply(c(1:length(elements)), function (x) {
-                        as.vector(paste(elements[[x]], collapse=", "))
-                      })
+      as.vector(paste(elements[[x]], collapse=", "))
+    })
     
     sliceTableOfSNPs$Elements <- elements
-
+    
     
     # Get the gene name for each SNP. Names are in the descreption of the "gene" field of the annotation file 
-   geneNames <- sapply(SNPPos, function(x) {
-                        positionOnTable <- which(sliceAnnotationEnhanced$start<=x & sliceAnnotationEnhanced$end>=x )
-                        geneNames <- sliceAnnotationEnhanced$attribute[positionOnTable]
-                        # if the element is in non coding region, process to include distances
-                        # print(sliceAnnotationEnhanced[positionOnTable])
-                        # print( positionOnTable )
-                        # print(x)
-                        if (length(positionOnTable) != 0) {
-                          if ( sliceAnnotationEnhanced$feature[positionOnTable] == "NonCoding"  ) {
-                            start <- sliceAnnotationEnhanced$start[positionOnTable]
-                            end <- sliceAnnotationEnhanced$end[positionOnTable]
-                            distanceFromPrevious <- abs(x-start)
-                            distanceFromNext <- abs(x-end)
-                            genes <- strsplit(geneNames, split= "|||", fixed=T)
-                            geneNames <- paste( distanceFromPrevious, "bp", genes[[1]][1], "AND", distanceFromNext, "bp", genes[[1]][2], sep=" ")
-                          }
-                        }
-                        return(geneNames)
-                      })
+    geneNames <- sapply(SNPPos, function(x) {
+      positionOnTable <- which(sliceAnnotationEnhanced$start<=x & sliceAnnotationEnhanced$end>=x )
+      geneNames <- sliceAnnotationEnhanced$attribute[positionOnTable]
+      # if the element is in non coding region, process to include distances
+      # print(sliceAnnotationEnhanced[positionOnTable])
+      # print( positionOnTable )
+      # print(x)
+      if (length(positionOnTable) != 0) {
+        if ( sliceAnnotationEnhanced$feature[positionOnTable] == "NonCoding"  ) {
+          start <- sliceAnnotationEnhanced$start[positionOnTable]
+          end <- sliceAnnotationEnhanced$end[positionOnTable]
+          distanceFromPrevious <- abs(x-start)
+          distanceFromNext <- abs(x-end)
+          genes <- strsplit(geneNames, split= "|||", fixed=T)
+          geneNames <- paste( distanceFromPrevious, "bp", genes[[1]][1], "AND", distanceFromNext, "bp", genes[[1]][2], sep=" ")
+        }
+      }
+      return(geneNames)
+    })
     
-
-     # go through the list and get the second element of the vector, that is the name of the gene
-#      geneNames <- sapply(c(1:length(geneNames)), function (x) {
-#                         geneNames[[x]] <- geneNames[[x]][2]
-#                       })
+    
+    # go through the list and get the second element of the vector, that is the name of the gene
+    #      geneNames <- sapply(c(1:length(geneNames)), function (x) {
+    #                         geneNames[[x]] <- geneNames[[x]][2]
+    #                       })
     
     # combine all elements of a vector into a single string, separated by comma
     geneNames <- sapply(c(1:length(geneNames)), function (x) {
       as.vector(paste(geneNames[[x]], collapse=", "))
     })
-       
+    
     # replace empty vectors with the description from "element" field 
-     emptyGeneNameIndex <-  which(is.na(geneNames)) # which(sapply(c(1:length(geneNames)), function (x) {length(geneNames[[x]])==0 }))
-     geneNames[emptyGeneNameIndex] <- elements[emptyGeneNameIndex]
-     geneNames[is.na(geneNames)] <- "Non Annotated Region"
-     geneNames <- unlist(geneNames)   
-      
-#       # Calculate distances 
-#       distances <- sapply(SNPPos, function(x) {
-#         positionOnTable <- which(sliceAnnotationEnhanced$start<=x & sliceAnnotationEnhanced$end>=x )
-#         
-#         start <- sliceAnnotationEnhanced$start[positionOnTable]
-#         end <- sliceAnnotationEnhanced$end[positionOnTable]
-#         distanceFromPrevious <- abs(x-start)
-#         distanceFromNext <- abs(x-end)
-#         c(distanceFromPrevious, distanceFromNext)
-#         #return(geneNames)
-#       })
-
+    emptyGeneNameIndex <-  which(is.na(geneNames)) # which(sapply(c(1:length(geneNames)), function (x) {length(geneNames[[x]])==0 }))
+    geneNames[emptyGeneNameIndex] <- elements[emptyGeneNameIndex]
+    geneNames[is.na(geneNames)] <- "Non Annotated Region"
+    geneNames <- unlist(geneNames)   
+    
+    #       # Calculate distances 
+    #       distances <- sapply(SNPPos, function(x) {
+    #         positionOnTable <- which(sliceAnnotationEnhanced$start<=x & sliceAnnotationEnhanced$end>=x )
+    #         
+    #         start <- sliceAnnotationEnhanced$start[positionOnTable]
+    #         end <- sliceAnnotationEnhanced$end[positionOnTable]
+    #         distanceFromPrevious <- abs(x-start)
+    #         distanceFromNext <- abs(x-end)
+    #         c(distanceFromPrevious, distanceFromNext)
+    #         #return(geneNames)
+    #       })
+    
     sliceTableOfSNPs$GeneName <-  geneNames
     
     # count the occurence of a gene and put it in a vector.
@@ -353,26 +358,26 @@ annotateSNPTable <- function (path, annotFile, tableOfSNPs) {
     
     sliceTableOfSNPs$GeneCount <-  geneCount
     tableOfSNPsAnnotated <- rbind (tableOfSNPsAnnotated, sliceTableOfSNPs)
-}
-#     
-#     # Get the gene description for each SNP. Names are in the descreption of the "CDS" field of the annotation file 
-#     geneDescr <- sapply(SNPPos, function(x) {
-#                         positionOnTable <- which(annotation$Start<=x & annotation$Stop>=x & annotation$region=="CDS" )
-#                         geneDescr <- str_match(annotation$Description[positionOnTable], "Note=(.*?);")
-#                         return(geneDescr)
-#                       })
-#     
-#     # replace empty vectors with "Non Annotated Region"
-#     geneDescr[which(sapply(c(1:length(geneDescr)), function (x) {length(geneDescr[[x]])==0}))] <- "Non Annotated Region"
-#     
-#     # go through the list and get the second element of the vector, that is the description of the gene function
-#     geneDescr <- sapply(c(1:length(geneDescr)), function (x) {
-#                         geneDescr[[x]] <- geneDescr[[x]][2]
-#                       })  
-#     tableOfSNPs$Function <-  geneDescr
-
-
-    return(tableOfSNPsAnnotated)
+  }
+  #     
+  #     # Get the gene description for each SNP. Names are in the descreption of the "CDS" field of the annotation file 
+  #     geneDescr <- sapply(SNPPos, function(x) {
+  #                         positionOnTable <- which(annotation$Start<=x & annotation$Stop>=x & annotation$region=="CDS" )
+  #                         geneDescr <- str_match(annotation$Description[positionOnTable], "Note=(.*?);")
+  #                         return(geneDescr)
+  #                       })
+  #     
+  #     # replace empty vectors with "Non Annotated Region"
+  #     geneDescr[which(sapply(c(1:length(geneDescr)), function (x) {length(geneDescr[[x]])==0}))] <- "Non Annotated Region"
+  #     
+  #     # go through the list and get the second element of the vector, that is the description of the gene function
+  #     geneDescr <- sapply(c(1:length(geneDescr)), function (x) {
+  #                         geneDescr[[x]] <- geneDescr[[x]][2]
+  #                       })  
+  #     tableOfSNPs$Function <-  geneDescr
+  
+  
+  return(tableOfSNPsAnnotated)
 }
 
 # read in and process all samples (vcf files) 
@@ -387,7 +392,7 @@ ReadVCF <- function(listOfFiles) {
     if (inherits(possibleError, "error")){
       warning(paste("This file is emtpy: ", listOfFiles[i]), immediate.= TRUE)
     }
-      
+    
     # if no error message was caught, continue
     if (!inherits(possibleError, "error")){
       # read file and store
@@ -408,7 +413,7 @@ ReadVCF <- function(listOfFiles) {
       
       # put the sample in the data.frame 
       tableOfSNPs <- rbind(tableOfSNPs, Sample, deparse.level = 1)
-      }
+    }
   }
   # change the first column to keep only the contig ID in, so it matches with the annotation table
   contigs <- as.character(tableOfSNPs$CHROM)
@@ -434,10 +439,10 @@ tableOfSNPsSmallVariants <- tableOfSNPsSmallVariants[ ,c("CHROM", "POS", "TYPE",
 uniqueIDs <- sort(unique(tableOfSNPs$ID))
 uniqueSmallVariantIDs <- sort(unique(tableOfSNPsSmallVariants$ID))
 listOfIDs <- sapply(uniqueSmallVariantIDs, function(ID){  
-              nOfRows<- nrow(tableOfSNPsSmallVariants[ tableOfSNPsSmallVariants$ID == ID, ])
-              index <- match(ID, uniqueSmallVariantIDs)
-              return(rep(uniqueIDs[index], nOfRows))
-              
+  nOfRows<- nrow(tableOfSNPsSmallVariants[ tableOfSNPsSmallVariants$ID == ID, ])
+  index <- match(ID, uniqueSmallVariantIDs)
+  return(rep(uniqueIDs[index], nOfRows))
+  
 })
 vectorOfIDs <- unlist(listOfIDs)
 tableOfSNPsSmallVariants$ID <- vectorOfIDs
@@ -465,7 +470,7 @@ dev.off()
 write.table(overlap_counts, file=paste(path, "Overlap_Counts_table.txt", sep=""), sep="\t", row.names=T,col.names=T)
 
 # Function to add a few more columns with extra statistics
- tableOfSNPs <- extraStatsTVC(tableOfSNPs)
+tableOfSNPs <- extraStatsTVC(tableOfSNPs)
 
 # print variance table
 # Remove useless columns from table of SNPs
@@ -511,17 +516,17 @@ for (id in listOfIDs){
     
     # Homopolymers
     # check DELs only
-#     chromosomeSeq <- reference[[i]]
-#     delPos <- sliceOfTableOfSNPs[sliceOfTableOfSNPs$CHROM == i & sliceOfTableOfSNPs$TYPE == "DEL", ]$POS
-#     delRowIndex <- as.numeric(row.names(sliceOfTableOfSNPs[sliceOfTableOfSNPs$CHROM == i & sliceOfTableOfSNPs$TYPE == "DEL", ]))
-#     if (length(delPos)> 0 ){
-#       delInsideHomopolBool <- variantsInsideHomop(delPos, chromosomeSeq, 10, 4)
-#       # delInsideHomopolIndex <- delRowIndex[delInsideHomopolBool]
-#     }
-#     else {delInsideHomopolBool <- vector()}
-#     if(length(delInsideHomopolBool) > 0){
-#       delInsideHomopolIndex <- c(delInsideHomopolIndex, delRowIndex[delInsideHomopolBool])
-#     }
+    #     chromosomeSeq <- reference[[i]]
+    #     delPos <- sliceOfTableOfSNPs[sliceOfTableOfSNPs$CHROM == i & sliceOfTableOfSNPs$TYPE == "DEL", ]$POS
+    #     delRowIndex <- as.numeric(row.names(sliceOfTableOfSNPs[sliceOfTableOfSNPs$CHROM == i & sliceOfTableOfSNPs$TYPE == "DEL", ]))
+    #     if (length(delPos)> 0 ){
+    #       delInsideHomopolBool <- variantsInsideHomop(delPos, chromosomeSeq, 10, 4)
+    #       # delInsideHomopolIndex <- delRowIndex[delInsideHomopolBool]
+    #     }
+    #     else {delInsideHomopolBool <- vector()}
+    #     if(length(delInsideHomopolBool) > 0){
+    #       delInsideHomopolIndex <- c(delInsideHomopolIndex, delRowIndex[delInsideHomopolBool])
+    #     }
     
   }
   # a true /false vector to be implemented as a 
@@ -552,7 +557,7 @@ CompileExperiment <- function(sampleIDs, tableOfSNPs, tableOfSNPsSmallVariants, 
   print(head(contigPosType))
   tableForComparisson$contigPosType <- contigPosType
   contigPosTypeSmallVar <- paste(tableForComparissonSmallVariants$CHROM, tableForComparissonSmallVariants$POS, 
-                                  tableForComparissonSmallVariants$TYPE, sep="_")
+                                 tableForComparissonSmallVariants$TYPE, sep="_")
   print(head(contigPosTypeSmallVar))
   tableForComparissonSmallVariants$contigPosType <- contigPosTypeSmallVar
   
@@ -574,43 +579,43 @@ CompileExperiment <- function(sampleIDs, tableOfSNPs, tableOfSNPsSmallVariants, 
     sliceOfTableOfSmallVarForComparisson <- tableForComparissonSmallVariants[ tableForComparissonSmallVariants$ID == sample, ]
     print(head(sliceOfTableOfSmallVarForComparisson))  
     SNPFreq <- sapply(uniqueVars, function(variant){                        
-                        SNPFreq <- sliceOfTableForComparisson[ sliceOfTableForComparisson$contigPosType  == variant, ]$SNPFreq
-                                            if (length(SNPFreq) != 0) {
-                                              return(SNPFreq)
-                                            } else if (variant %in% sliceOfTableOfSmallVarForComparisson$contigPosType) { 
-                                              return (-1111)
-                                            } else {
-                                              return(NA)
-                                            }
+      SNPFreq <- sliceOfTableForComparisson[ sliceOfTableForComparisson$contigPosType  == variant, ]$SNPFreq
+      if (length(SNPFreq) != 0) {
+        return(SNPFreq)
+      } else if (variant %in% sliceOfTableOfSmallVarForComparisson$contigPosType) { 
+        return (-1111)
+      } else {
+        return(NA)
+      }
     })
     sampleFreqMatrix[ ,i] <- SNPFreq
     
     SNPDepth <- sapply(uniqueVars, function(variant) {                        
-                        SNPDepth <- sliceOfTableForComparisson[ sliceOfTableForComparisson$contigPosType  == variant, ]$Depth
-                        if (length(SNPDepth) != 0) {
-                          return(SNPDepth)
-                        } else {
-                          return(NA)
-                        }
+      SNPDepth <- sliceOfTableForComparisson[ sliceOfTableForComparisson$contigPosType  == variant, ]$Depth
+      if (length(SNPDepth) != 0) {
+        return(SNPDepth)
+      } else {
+        return(NA)
+      }
     })
     sampleDepthMatrix[,i] <- SNPDepth
     
     SNPQual <- sapply(uniqueVars, function(variant) {                        
-                      SNPQual <- sliceOfTableForComparisson[ sliceOfTableForComparisson$contigPosType  == variant, ]$QUAL
-                      if (length(SNPQual) != 0) {
-                        return(SNPQual)
-                      } else {
-                        return(NA)
-                      }
+      SNPQual <- sliceOfTableForComparisson[ sliceOfTableForComparisson$contigPosType  == variant, ]$QUAL
+      if (length(SNPQual) != 0) {
+        return(SNPQual)
+      } else {
+        return(NA)
+      }
     })
     sampleQualMatrix[,i] <- SNPQual
     
     hotspots <- sapply(uniqueVars, function(variant) {                        
-                      hotSpot<- sliceOfTableForComparisson[ sliceOfTableForComparisson$contigPosType  == variant, ]$HotSpotRegion
-                      if (length(hotSpot) != 0) {
-                        return(hotSpot)
-                      }else{ 
-                        return(NA)}
+      hotSpot<- sliceOfTableForComparisson[ sliceOfTableForComparisson$contigPosType  == variant, ]$HotSpotRegion
+      if (length(hotSpot) != 0) {
+        return(hotSpot)
+      }else{ 
+        return(NA)}
     })
     sampleHotSpotMatrix[,i] <- hotspots
     
@@ -619,13 +624,13 @@ CompileExperiment <- function(sampleIDs, tableOfSNPs, tableOfSNPsSmallVariants, 
   
   # go throught the hotspot list and call hotspot consensus
   hotSpotsConsensus <- apply(sampleHotSpotMatrix, 1, function(row){
-                              rowNARemoved <- row[!is.na(row)]
-                              uniqueRowNARemoved <- unique(rowNARemoved)
-                              if (length(uniqueRowNARemoved) ==1 ) {
-                                rowNARemoved[1]
-                              }else{
-                                "NoConsensus"
-                              }
+    rowNARemoved <- row[!is.na(row)]
+    uniqueRowNARemoved <- unique(rowNARemoved)
+    if (length(uniqueRowNARemoved) ==1 ) {
+      rowNARemoved[1]
+    }else{
+      "NoConsensus"
+    }
   })
   
   compiledExperimentTable <- data.frame()
@@ -652,16 +657,16 @@ CompileExperiment <- function(sampleIDs, tableOfSNPs, tableOfSNPsSmallVariants, 
   
   # Go through the depth list and calculate the average depth per SNP. Remove non-numeric ("Absent") elements
   averageRowDepth <- apply(sampleDepthMatrix, 1, function(row) {
-                            numericRow <- as.numeric(row)
-                            numericRow <- numericRow[!is.na(numericRow)]
-                            mean(numericRow)
+    numericRow <- as.numeric(row)
+    numericRow <- numericRow[!is.na(numericRow)]
+    mean(numericRow)
   })
   
   # Go through the depth list and calculate the average depth per SNP. Remove non-numeric ("Absent") elements
   averageRowQual <- apply(sampleQualMatrix, 1, function(row) {
-                          numericRow <- as.numeric(row)
-                          numericRow <- numericRow[!is.na(numericRow)]
-                          mean(numericRow)
+    numericRow <- as.numeric(row)
+    numericRow <- numericRow[!is.na(numericRow)]
+    mean(numericRow)
   })
   
   freqAndAverageDepthMatrix <- sampleFreqMatrix
@@ -674,99 +679,99 @@ CompileExperiment <- function(sampleIDs, tableOfSNPs, tableOfSNPsSmallVariants, 
   compiledExperimentTable$Element <- experimentTableUniqueVar$Elements
   compiledExperimentTable$GeneName <- experimentTableUniqueVar$GeneName
   compiledExperimentTable$HotSpotConsensus <- hotSpotsConsensus
-   
+  
   timoFilterAndSlope <- apply(freqAndAverageDepthMatrix, 1, function(row) {
-                             averageRowDepth <- as.numeric(tail(row, 1))
-                             # In the case multiple alernative alleles are reported, use the highest frequency
-                             rowFreq <- head(row, -1)
-                             rowFreq <- sapply(rowFreq, function(string){
-                                               splitString <- as.numeric(unlist(strsplit(string, split=",", fixed=T)))
-                                               if (splitString < 0 || is.na(splitString)) splitString <- NA
-                                               if(all(is.na(splitString))){
-                                                 splitString
-                                               } else{
-                                                 max(splitString)
-                                               }
-                             })
-                             
-                             
-                             
-                             maxRowFreq <- max(rowFreq, na.rm = T)
-                             
-                             # Timo s filter                          
-                             diff <- round((max(rowFreq) - min(rowFreq)), digits=4)
-                             timoFilter <- "PASS"
-                             if (averageRowDepth < 100){
-                                if ( sum(is.na(rowFreq)) == 0 & diff < 0.1) {
-                                 timoFilter <- paste("FAIL, Min-Max diff:", diff, "(is bellow 0.1)", sep=" ")
-                                }
-                             } else {
-                                if ( sum(is.na(rowFreq)) == 0 & diff < 0.1) {
-                                  timoFilter <- paste("FAIL, Min-Max diff:", diff, "(is bellow 0.1)", sep=" ")
-                               }
-                             }
-                            
-                             # Minimium Maximum frequency filter
-                             if (maxRowFreq < 0.2) {
-                               maxFreqInRow <- "FAIL"
-                             } else {
-                               maxFreqInRow <- "PASS"
-                             }
-                             
-                             # Coverage filter
-                             coverage <- "WithinLimits"
-                             if ( averageRowDepth < 100) {
-                               coverage <- "LowCoverage"
-                             } else if ( averageRowDepth > 500 ) {
-                               coverage <- "HighCoverage"
-                             }
-                                                          
-                             freqWO <- tail(rowFreq, 1) # sample WithOut Antibiotic
-                             freqWO[is.na(freqWO)] <- 0 # absent SNPs should be substituted with 0
-                             rowFreq <- head(rowFreq, -1)
-                             # rowFreq <- rowFreq[which(!is.na(rowFreq))]
-                             underSelection <- rowFreq[2:length(rowFreq)] # Samples under selection
-                             pattern <- NA
-                             slope <- NA
-                              
-                             # Slope
-                             # if there are 2 or more genes 
-                             if (sum(!is.na(underSelection)) >= 2) {
-                               #print(paste("average Ant: ", averageAntibTreated, sep=""))
-                               averageAntibTreated <- mean(underSelection[2:length(underSelection)], na.rm = T)
-                               slope <- round(lm(underSelection ~ c(1:length(underSelection)))$coefficients[[2]], digits=4)
-                               freqAverTreatedMinusFreqWO <- averageAntibTreated - freqWO
-                               # Check if data follows pattern
-                               if (slope >= 0 & freqAverTreatedMinusFreqWO < 0){
-                                 pattern <- "GoesUpStaysUp"                                      
-                               } else if (slope >= 0 & freqAverTreatedMinusFreqWO > 0){
-                                 pattern <- "GoesUpThenDown"  
-                               } else if (slope < 0 & freqAverTreatedMinusFreqWO > 0) {
-                                 pattern <- "GoesDownStaysDown"
-                               } else if (slope < 0 & freqAverTreatedMinusFreqWO < 0) {
-                                 pattern <- "GoesDownThenUp"
-                               } else {
-                                 pattern <- "NoPattern"
-                               }
-                               
-                             } else if(!is.na(tail(underSelection, 1))) {
-                                timoFilter <- "SNP in Last Selection Day Only"
-                             } else {
-                                timoFilter <- "SNP in Single Sample"
-                             }
-                             
-                             
-                             # Essential Mutation
-                             dayZero <- underSelection[1]
-                             if (is.na(dayZero)) { dayZero <- 0 }
-                             underAntibioticAndWO <- c(underSelection[2:length(underSelection)], freqWO)                           
-                             allAboveThershold <- all(underAntibioticAndWO > 0.8, na.rm = T)
-                             if ( !all(!is.na(underAntibioticAndWO) )) {allAboveThershold <- F}
-                             if (dayZero < 0.2 & allAboveThershold ) {
-                               pattern <- "EssentialMutation"
-                             }
-                             
-                             list(coverage, timoFilter, maxFreqInRow, slope, pattern)
+    averageRowDepth <- as.numeric(tail(row, 1))
+    # In the case multiple alernative alleles are reported, use the highest frequency
+    rowFreq <- head(row, -1)
+    rowFreq <- sapply(rowFreq, function(string){
+      splitString <- as.numeric(unlist(strsplit(string, split=",", fixed=T)))
+      if (splitString < 0 || is.na(splitString)) splitString <- NA
+      if(all(is.na(splitString))){
+        splitString
+      } else{
+        max(splitString)
+      }
+    })
+    
+    
+    
+    maxRowFreq <- max(rowFreq, na.rm = T)
+    
+    # Timo s filter                          
+    diff <- round((max(rowFreq) - min(rowFreq)), digits=4)
+    timoFilter <- "PASS"
+    if (averageRowDepth < 100){
+      if ( sum(is.na(rowFreq)) == 0 & diff < 0.1) {
+        timoFilter <- paste("FAIL, Min-Max diff:", diff, "(is bellow 0.1)", sep=" ")
+      }
+    } else {
+      if ( sum(is.na(rowFreq)) == 0 & diff < 0.1) {
+        timoFilter <- paste("FAIL, Min-Max diff:", diff, "(is bellow 0.1)", sep=" ")
+      }
+    }
+    
+    # Minimium Maximum frequency filter
+    if (maxRowFreq < 0.2) {
+      maxFreqInRow <- "FAIL"
+    } else {
+      maxFreqInRow <- "PASS"
+    }
+    
+    # Coverage filter
+    coverage <- "WithinLimits"
+    if ( averageRowDepth < 100) {
+      coverage <- "LowCoverage"
+    } else if ( averageRowDepth > 500 ) {
+      coverage <- "HighCoverage"
+    }
+    
+    freqWO <- tail(rowFreq, 1) # sample WithOut Antibiotic
+    freqWO[is.na(freqWO)] <- 0 # absent SNPs should be substituted with 0
+    rowFreq <- head(rowFreq, -1)
+    # rowFreq <- rowFreq[which(!is.na(rowFreq))]
+    underSelection <- rowFreq[2:length(rowFreq)] # Samples under selection
+    pattern <- NA
+    slope <- NA
+    
+    # Slope
+    # if there are 2 or more genes 
+    if (sum(!is.na(underSelection)) >= 2) {
+      #print(paste("average Ant: ", averageAntibTreated, sep=""))
+      averageAntibTreated <- mean(underSelection[2:length(underSelection)], na.rm = T)
+      slope <- round(lm(underSelection ~ c(1:length(underSelection)))$coefficients[[2]], digits=4)
+      freqAverTreatedMinusFreqWO <- averageAntibTreated - freqWO
+      # Check if data follows pattern
+      if (slope >= 0 & freqAverTreatedMinusFreqWO < 0){
+        pattern <- "GoesUpStaysUp"                                      
+      } else if (slope >= 0 & freqAverTreatedMinusFreqWO > 0){
+        pattern <- "GoesUpThenDown"  
+      } else if (slope < 0 & freqAverTreatedMinusFreqWO > 0) {
+        pattern <- "GoesDownStaysDown"
+      } else if (slope < 0 & freqAverTreatedMinusFreqWO < 0) {
+        pattern <- "GoesDownThenUp"
+      } else {
+        pattern <- "NoPattern"
+      }
+      
+    } else if(!is.na(tail(underSelection, 1))) {
+      timoFilter <- "SNP in Last Selection Day Only"
+    } else {
+      timoFilter <- "SNP in Single Sample"
+    }
+    
+    
+    # Essential Mutation
+    dayZero <- underSelection[1]
+    if (is.na(dayZero)) { dayZero <- 0 }
+    underAntibioticAndWO <- c(underSelection[2:length(underSelection)], freqWO)                           
+    allAboveThershold <- all(underAntibioticAndWO > 0.8, na.rm = T)
+    if ( !all(!is.na(underAntibioticAndWO) )) {allAboveThershold <- F}
+    if (dayZero < 0.2 & allAboveThershold ) {
+      pattern <- "EssentialMutation"
+    }
+    
+    list(coverage, timoFilter, maxFreqInRow, slope, pattern)
   })
   
   timoFilterAndSlopeMatrix <- as.data.frame(matrix(unlist(timoFilterAndSlope), nrow=length(timoFilterAndSlope), byrow=T))
@@ -803,11 +808,11 @@ CompileExperiment(sampleIDsForMPN256, tableOfSNPs, tableOfSNPsSmallVariants, "MP
 
 # PT512
 sampleIDsForPT512 = list(WT_Zero = listOfIDs[1],
-                          Broth_WT_D30 = listOfIDs[2],
-                          Broth_PT512_D5 = listOfIDs[14],
-                          Broth_PT512_D12 = listOfIDs[15],
-                          Broth_PT512_D22 = listOfIDs[16],
-                          Broth_PT512_WO_D15 = listOfIDs[17]
+                         Broth_WT_D30 = listOfIDs[2],
+                         Broth_PT512_D5 = listOfIDs[14],
+                         Broth_PT512_D12 = listOfIDs[15],
+                         Broth_PT512_D22 = listOfIDs[16],
+                         Broth_PT512_WO_D15 = listOfIDs[17]
 )
 CompileExperiment(sampleIDsForPT512, tableOfSNPs, tableOfSNPsSmallVariants, "PT512_new")
 
@@ -823,28 +828,28 @@ CompileExperiment(sampleIDsForTBM32, tableOfSNPs, tableOfSNPsSmallVariants, "TBM
 
 # CIP128
 sampleIDsForCIP128 = list(WT_Zero = listOfIDs[1],
-                         Broth_WT_D30 = listOfIDs[2],
-                         Broth_CIP128_D6 = listOfIDs[22],
-                         Broth_CIP128_D12 = listOfIDs[23],
-                         Broth_CIP128_D21 = listOfIDs[24],
-                         Broth_CIP128_WO_D15 = listOfIDs[25]
+                          Broth_WT_D30 = listOfIDs[2],
+                          Broth_CIP128_D6 = listOfIDs[22],
+                          Broth_CIP128_D12 = listOfIDs[23],
+                          Broth_CIP128_D21 = listOfIDs[24],
+                          Broth_CIP128_WO_D15 = listOfIDs[25]
 )
 CompileExperiment(sampleIDsForCIP128, tableOfSNPs, tableOfSNPsSmallVariants, "CIP128_new")
 
 # TBM1024
 sampleIDsForTBM1024 = list(WT_Zero = listOfIDs[1],
-                         Evans_WT_D30 = listOfIDs[3],
-                         Evans_TBM1024_D14 = listOfIDs[26],
-                         Evans_TBM1024_D30 = listOfIDs[27],
-                         Evans_TBM1024_WO_D15 = listOfIDs[28]
+                           Evans_WT_D30 = listOfIDs[3],
+                           Evans_TBM1024_D14 = listOfIDs[26],
+                           Evans_TBM1024_D30 = listOfIDs[27],
+                           Evans_TBM1024_WO_D15 = listOfIDs[28]
 )
 CompileExperiment(sampleIDsForTBM1024, tableOfSNPs, tableOfSNPsSmallVariants, "TBM1024_new")
 
 # CIP256
 sampleIDsForCIP256 = list(WT_Zero = listOfIDs[1],
-                           Evans_WT_D30 = listOfIDs[3],
-                           Evans_TCIP256_D11 = listOfIDs[29],
-                           Evans_CIP256_D19 = listOfIDs[30]
+                          Evans_WT_D30 = listOfIDs[3],
+                          Evans_TCIP256_D11 = listOfIDs[29],
+                          Evans_CIP256_D19 = listOfIDs[30]
 )
 CompileExperiment(sampleIDsForCIP256, tableOfSNPs, tableOfSNPsSmallVariants, "CIP256_new")
 
@@ -877,7 +882,7 @@ sampleIDs = list(Control =  listOfIDs[1:3], #c("BS_variants_01.vcf", "BS_variant
                  CIP128 =   listOfIDs[22:25], # c("BS_variants_22.vcf", "BS_variants_23.vcf", "BS_variants_24.vcf", "BS_variants_25.vcf"),
                  TBM1024 =  listOfIDs[26:28], # c("BS_variants_26.vcf", "BS_variants_27.vcf", "BS_variants_28.vcf" ),
                  CIP256 =   listOfIDs[29:30]  #c("BS_variants_29.vcf", "BS_variants_30.vcf")
-  )
+)
 
 experimentNames <- names(sampleIDs)
 for (experiment in experimentNames){

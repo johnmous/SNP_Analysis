@@ -541,7 +541,6 @@ UBTwovariantIDs <- apply(collapsedVariantsTable, 1, function(row){
     maxDistanceIndex <- which(absFrequencies==maxDistance)
     frequencies <- frequencies[-maxDistanceIndex]
   }
-  print(frequencies)
   #frequenciesExtremesRemoved <- frequenciesSorted[6:25]
   differenceMinMax <- max(frequencies) - min(frequencies)
   if (differenceMinMax < 0.1){
@@ -601,6 +600,365 @@ tableOfSNPs$HotSpotRegion <- hotSpotRegion
 tableOfSNPs$DelInHomopolymerRegion <- homopolRegion
 
 
+############################### $$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$ ######################################
+# A function to build a combined table with all samples from one experiment
+# a list with all the samples Ids to combine into one table
+
+CompileExperiment <- function(sampleIDs, tableOfSNPs, tableOfSNPsSmallVariants, experimentName,
+                              germlineVariantIDs, UBOneVariantIDs, ruleTwovariantIDs){
+  # build the table with the desired samples only
+  tableForComparisson <- data.frame()
+  tableForComparissonSmallVariants <- data.frame()
+  for (sample in sampleIDs) {
+    tableForComparisson <- rbind(tableForComparisson , tableOfSNPs[tableOfSNPs$ID ==  sample, ]) 
+    tableForComparissonSmallVariants <- rbind(tableForComparissonSmallVariants , 
+                                              tableOfSNPsSmallVariants[tableOfSNPsSmallVariants$ID ==  sample, ]) 
+  }
+  
+  # create an extra colunt concisting of the Contig+POS+Type of SNP. 
+  # If there are two different var types in the same pos, they are both included
+  contigPosType <- paste(tableForComparisson$CHROM, tableForComparisson$POS, tableForComparisson$TYPE, sep="_")
+  tableForComparisson$contigPosType <- contigPosType
+  contigPosTypeSmallVar <- paste(tableForComparissonSmallVariants$CHROM, tableForComparissonSmallVariants$POS, 
+                                 tableForComparissonSmallVariants$TYPE, sep="_")
+  tableForComparissonSmallVariants$contigPosType <- contigPosTypeSmallVar
+  
+  uniqueVars <- unique(tableForComparisson$contigPosType)
+  # sampleFreqList <- setNames(vector("data.frame", length( names(sampleIDs))), names(sampleIDs))
+  # sampleDepthList <- setNames(vector("list", length( names(sampleIDs))), names(sampleIDs))
+  # sampleQualList <- setNames(vector("list", length( names(sampleIDs))), names(sampleIDs))
+  sampleFreqMatrix <-     data.frame(matrix(NA, nrow = length(uniqueVars), ncol = length(sampleIDs) ,
+                                            dimnames = list(1:length(uniqueVars), names(sampleIDs))))
+  sampleQualMatrix <-     sampleFreqMatrix
+  sampleDepthMatrix <-    sampleFreqMatrix
+  sampleHotSpotMatrix <-  sampleFreqMatrix
+  
+  # Go through the table and compile a vector for each sample for Quality, Frequency, Depth and hotspot. 
+  # In the end, put the vector in a Data Frame
+  i = 1
+  for (sample in sampleIDs){
+    sliceOfTableForComparisson <- tableForComparisson[ tableForComparisson$ID == sample, ]
+    sliceOfTableOfSmallVarForComparisson <- tableForComparissonSmallVariants[ tableForComparissonSmallVariants$ID == sample, ]
+    SNPFreq <- sapply(uniqueVars, function(variant){                        
+      SNPFreq <- sliceOfTableForComparisson[ sliceOfTableForComparisson$contigPosType  == variant, ]$SNPFreq
+      if (length(SNPFreq) != 0) {
+        ##### if multiple frequencies reported, return the maximum
+        if (class(SNPFreq)=="character"){
+          splitString <- as.numeric(unlist(strsplit(SNPFreq, split=",", fixed=T)))
+          maxSNPFreq <- max(splitString)
+          return(maxSNPFreq)
+        } else {
+          return(SNPFreq)
+        }
+      } else if (variant %in% sliceOfTableOfSmallVarForComparisson$contigPosType) { 
+        return (-1111)
+      } else {
+        return(NA)
+      }
+    })
+    sampleFreqMatrix[ ,i] <- SNPFreq
+    
+    SNPDepth <- sapply(uniqueVars, function(variant) {                        
+      SNPDepth <- sliceOfTableForComparisson[ sliceOfTableForComparisson$contigPosType  == variant, ]$Depth
+      if (length(SNPDepth) != 0) {
+        return(SNPDepth)
+      } else {
+        return(NA)
+      }
+    })
+    sampleDepthMatrix[,i] <- SNPDepth
+    
+    SNPQual <- sapply(uniqueVars, function(variant) {                        
+      SNPQual <- sliceOfTableForComparisson[ sliceOfTableForComparisson$contigPosType  == variant, ]$QUAL
+      if (length(SNPQual) != 0) {
+        return(SNPQual)
+      } else {
+        return(NA)
+      }
+    })
+    sampleQualMatrix[,i] <- SNPQual
+    
+    hotspots <- sapply(uniqueVars, function(variant) {                        
+      hotSpot<- sliceOfTableForComparisson[ sliceOfTableForComparisson$contigPosType  == variant, ]$HotSpotRegion
+      if (length(hotSpot) != 0) {
+        return(hotSpot)
+      }else{ 
+        return(NA)}
+    })
+    sampleHotSpotMatrix[,i] <- hotspots
+    
+    i = i+1
+  }
+  
+  # go throught the hotspot list and call hotspot consensus
+  hotSpotsConsensus <- apply(sampleHotSpotMatrix, 1, function(row){
+    rowNARemoved <- row[!is.na(row)]
+    uniqueRowNARemoved <- unique(rowNARemoved)
+    if (length(uniqueRowNARemoved) == 1 ) {
+      rowNARemoved[1]
+    }else{
+      paste(row, collapse=",")
+    }
+  })
+  
+  compiledExperimentTable <- data.frame()
+  for (var in uniqueVars) {
+    compiledExperimentTable <- rbind(compiledExperimentTable, tableForComparisson[ tableForComparisson$contigPosType == var, ] )
+  }
+  uniqueVarIndex <- match(uniqueVars, tableForComparisson$contigPosType)
+  experimentTableUniqueVar <- tableForComparisson[uniqueVarIndex, ]
+  compiledExperimentTable <- experimentTableUniqueVar[ c("CHROM", "POS", "TYPE", "REF", "ALT")] #, "Elements", "GeneName") ]
+  
+  # Append Quality, Depth and frequency information for all samples. Name the columns accordingly 
+  compiledExperimentTable <- cbind(compiledExperimentTable, sampleQualMatrix)
+  qualityColIndex <- tail(1:ncol(compiledExperimentTable), ncol(sampleQualMatrix))
+  colnames(compiledExperimentTable)[qualityColIndex] <- paste("Qual", names(sampleQualMatrix), sep="_")
+  
+  compiledExperimentTable <- cbind(compiledExperimentTable, sampleDepthMatrix)
+  depthColIndex <- tail(1:ncol(compiledExperimentTable), ncol(sampleDepthMatrix))
+  colnames(compiledExperimentTable)[depthColIndex] <- paste("Depth", names(sampleDepthMatrix), sep="_")
+  
+  compiledExperimentTable <- cbind(compiledExperimentTable, sampleFreqMatrix)
+  freqColIndex <- tail(1:ncol(compiledExperimentTable), ncol(sampleFreqMatrix))
+  colnames(compiledExperimentTable)[freqColIndex]  <- paste("Freq", names(sampleFreqMatrix), sep="_")
+  
+  
+  # Go through the depth list and calculate the average depth per SNP. Remove non-numeric ("Absent") elements
+  averageRowDepth <- apply(sampleDepthMatrix, 1, function(row) {
+    numericRow <- as.numeric(row)
+    numericRow <- numericRow[!is.na(numericRow)]
+    mean(numericRow)
+  })
+  
+  # Go through the depth list and calculate the average depth per SNP. Remove non-numeric ("Absent") elements
+  averageRowQual <- apply(sampleQualMatrix, 1, function(row) {
+    numericRow <- as.numeric(row)
+    numericRow <- numericRow[!is.na(numericRow)]
+    mean(numericRow)
+  })
+  
+  freqAndAverageDepthMatrix <- sampleFreqMatrix
+  # freqAndAverageDepthMatrix <- freqAndAverageDepthMatrix[ ,c(1:6) ]
+  freqAndAverageDepthMatrix$AverageRowDepth  <- averageRowDepth
+  
+  # Append, averageRowDepth,  averageRowQual, Elements, GeneName, and Hotspot consensus  columns
+  compiledExperimentTable$averageRowDepth <- averageRowDepth
+  compiledExperimentTable$averageRowQual <- averageRowQual
+  compiledExperimentTable$Element <- experimentTableUniqueVar$Elements
+  compiledExperimentTable$GeneName <- experimentTableUniqueVar$GeneName
+  compiledExperimentTable$HotSpotConsensus <- hotSpotsConsensus
+  
+  timoFilterAndSlope <- apply(freqAndAverageDepthMatrix, 1, function(row) {
+    averageRowDepth <- as.numeric(tail(row, 1))
+    # In the case multiple alernative alleles are reported, use the highest frequency
+    rowFreq <- head(row, -1)
+    rowFreq <- lapply(rowFreq, function(frequency){
+      if (frequency < 0|| is.na(frequency)) {
+        return(NA)
+      }else {
+        return(frequency)
+      }
+    })
+    rowFreq <- unlist(rowFreq)
+#       splitString <- as.numeric(unlist(strsplit(string, split=",", fixed=T)))
+#       if (splitString < 0 || is.na(splitString)) splitString <- NA
+#       if(all(is.na(splitString))){
+#         splitString
+#       } else{
+#         max(splitString)
+#       }
+#     })
+    
+    
+    
+    maxRowFreq <- max(rowFreq, na.rm = T)
+    
+    # Timo s filter                          
+    diff <- round((max(rowFreq) - min(rowFreq)), digits=4)
+    timoFilter <- "PASS"
+    if (averageRowDepth < 100){
+      if ( sum(is.na(rowFreq)) == 0 & diff < 0.1) {
+        timoFilter <- paste("FAIL, Min-Max diff:", diff, "(is bellow 0.1)", sep=" ")
+      }
+    } else {
+      if ( sum(is.na(rowFreq)) == 0 & diff < 0.1) {
+        timoFilter <- paste("FAIL, Min-Max diff:", diff, "(is bellow 0.1)", sep=" ")
+      }
+    }
+    
+    # Minimium Maximum frequency filter
+    if (maxRowFreq < 0.2) {
+      maxFreqInRow <- "FAIL"
+    } else {
+      maxFreqInRow <- "PASS"
+    }
+    
+    # Coverage filter
+    coverage <- "WithinLimits"
+    if ( averageRowDepth < 100) {
+      coverage <- "LowCoverage"
+    } else if ( averageRowDepth > 500 ) {
+      coverage <- "HighCoverage"
+    }
+    
+    freqWO <- tail(rowFreq, 1) # sample WithOut Antibiotic
+    freqWO[is.na(freqWO)] <- 0 # absent SNPs should be substituted with 0
+    rowFreq <- head(rowFreq, -1)
+    # rowFreq <- rowFreq[which(!is.na(rowFreq))]
+    underSelection <- rowFreq[2:length(rowFreq)] # Samples under selection
+    pattern <- NA
+    slope <- NA
+    
+    # Slope
+    # if there are 2 or more genes 
+    if (sum(!is.na(underSelection)) >= 2) {
+      #print(paste("average Ant: ", averageAntibTreated, sep=""))
+      averageAntibTreated <- mean(underSelection[2:length(underSelection)], na.rm = T)
+      slope <- round(lm(underSelection ~ c(1:length(underSelection)))$coefficients[[2]], digits=4)
+      freqAverTreatedMinusFreqWO <- averageAntibTreated - freqWO
+      # Check if data follows pattern
+      if (slope >= 0 & freqAverTreatedMinusFreqWO < 0){
+        pattern <- "GoesUpStaysUp"                                      
+      } else if (slope >= 0 & freqAverTreatedMinusFreqWO > 0){
+        pattern <- "GoesUpThenDown"  
+      } else if (slope < 0 & freqAverTreatedMinusFreqWO > 0) {
+        pattern <- "GoesDownStaysDown"
+      } else if (slope < 0 & freqAverTreatedMinusFreqWO < 0) {
+        pattern <- "GoesDownThenUp"
+      } else {
+        pattern <- "NoPattern"
+      }
+      
+    } else if(!is.na(tail(underSelection, 1))) {
+      timoFilter <- "SNP in Last Selection Day Only"
+    } else {
+      timoFilter <- "SNP in Single Sample"
+    }
+    
+    
+    # Essential Mutation
+    dayZero <- underSelection[1]
+    if (is.na(dayZero)) { dayZero <- 0 }
+    underAntibioticAndWO <- c(underSelection[2:length(underSelection)], freqWO)                           
+    allAboveThershold <- all(underAntibioticAndWO > 0.8, na.rm = T)
+    if ( !all(!is.na(underAntibioticAndWO) )) {allAboveThershold <- F}
+    if (dayZero < 0.2 & allAboveThershold ) {
+      pattern <- "EssentialMutation"
+    }
+    
+    list(coverage, timoFilter, maxFreqInRow, slope, pattern)
+  })
+  
+  timoFilterAndSlopeMatrix <- as.data.frame(matrix(unlist(timoFilterAndSlope), nrow=length(timoFilterAndSlope), byrow=T))
+  colnames(timoFilterAndSlopeMatrix ) <- c("Coverage", "Timo's Filter", "MaxRowFreq>0.2", "Slope, Antibiotic Treated only", "Pattern")
+  # freqAndAverageDepthMatrix$TimoFilter <- timoFilter
+  compiledExperimentTable <- cbind(compiledExperimentTable, timoFilterAndSlopeMatrix)
+  
+  contigPosType <- paste(compiledExperimentTable$CHROM, compiledExperimentTable$POS, compiledExperimentTable$TYPE, sep="_")
+  
+  ############ RuleOne
+  ruleOne <- lapply(contigPosType, function(varID){
+    if (varID %in% germlineVariantIDs) {
+      return("Germline")
+    }
+    if (varID %in% UBOneVariantIDs){
+      return("UB1")
+    } else {
+      return("Valid")
+    }
+  }) 
+  compiledExperimentTable$RuleOne <- unlist(ruleOne)
+  
+  ############ RuleOne
+  ruleTwo <-  lapply(contigPosType, function(varID){
+    if (varID %in% ruleTwovariantIDs){
+      return("UB2")
+    } else {
+      return("Valid")
+    }
+  })
+  compiledExperimentTable$RuleTwo <- unlist(ruleTwo)
+  
+  # print the table
+  write.table(compiledExperimentTable, paste(path, "TableFor", experimentName, ".txt", sep=""), sep="\t", row.names=FALSE) 
+}
+
+######### ******* ######## 
+# compile the tables for all experiments
+# CAZ256
+sampleIDsForCAZ256 = list(WT_Zero = listOfIDs[1],
+                          Broth_WT_D30 = listOfIDs[2],
+                          Broth_CAZ256_D6 = listOfIDs[4],
+                          Broth_CAZ256_D9 = listOfIDs[5],
+                          Broth_CAZ256_D12 = listOfIDs[6],
+                          Broth_CAZ256_D21 = listOfIDs[7],
+                          Broth_CAZ256_WO_D15 = listOfIDs[8]
+)
+CompileExperiment(sampleIDsForCAZ256, tableOfSNPs, tableOfSNPsSmallVariants, "CAZ256_noMultipleFreqHotSpotDetails",
+                  germlineVariantIDs, UBOneVariantIDs, ruleTwovariantIDs)
+
+# MPN256
+sampleIDsForMPN256 = list(WT_Zero = listOfIDs[1],
+                          Broth_WT_D30 = listOfIDs[2],
+                          Broth_MPN256_D5 = listOfIDs[9],
+                          Broth_MPN256_D10 = listOfIDs[10],
+                          Broth_MPN256_D25 = listOfIDs[11],
+                          Broth_MPN256_WO_D15 = listOfIDs[12]
+)
+CompileExperiment(sampleIDsForMPN256, tableOfSNPs, tableOfSNPsSmallVariants, "MPN256_noMultipleFreqHotSpotDetails",
+                  germlineVariantIDs, UBOneVariantIDs, ruleTwovariantIDs)
+
+# PT512
+sampleIDsForPT512 = list(WT_Zero = listOfIDs[1],
+                         Broth_WT_D30 = listOfIDs[2],
+                         Broth_PT512_D5 = listOfIDs[14],
+                         Broth_PT512_D12 = listOfIDs[15],
+                         Broth_PT512_D22 = listOfIDs[16],
+                         Broth_PT512_WO_D15 = listOfIDs[17]
+)
+CompileExperiment(sampleIDsForPT512, tableOfSNPs, tableOfSNPsSmallVariants, "PT512_noMultipleFreqHotSpotDetails",
+                  germlineVariantIDs, UBOneVariantIDs, ruleTwovariantIDs)
+
+# TBM32
+sampleIDsForTBM32 = list(WT_Zero = listOfIDs[1],
+                         Broth_WT_D30 = listOfIDs[2],
+                         Broth_TBM32_D6 = listOfIDs[18],
+                         Broth_TBM32_D13 = listOfIDs[19],
+                         Broth_TBM32_D30 = listOfIDs[20],
+                         Broth_TBM32_WO_D15 = listOfIDs[21]
+)
+CompileExperiment(sampleIDsForTBM32, tableOfSNPs, tableOfSNPsSmallVariants, "TBM32_noMultipleFreqHotSpotDetails",
+                  germlineVariantIDs, UBOneVariantIDs, ruleTwovariantIDs)
+
+# CIP128
+sampleIDsForCIP128 = list(WT_Zero = listOfIDs[1],
+                          Broth_WT_D30 = listOfIDs[2],
+                          Broth_CIP128_D6 = listOfIDs[22],
+                          Broth_CIP128_D12 = listOfIDs[23],
+                          Broth_CIP128_D21 = listOfIDs[24],
+                          Broth_CIP128_WO_D15 = listOfIDs[25]
+)
+CompileExperiment(sampleIDsForCIP128, tableOfSNPs, tableOfSNPsSmallVariants, "CIP128_noMultipleFreqHotSpotDetails",
+                  germlineVariantIDs, UBOneVariantIDs, ruleTwovariantIDs)
+
+# TBM1024
+sampleIDsForTBM1024 = list(WT_Zero = listOfIDs[1],
+                           Evans_WT_D30 = listOfIDs[3],
+                           Evans_TBM1024_D14 = listOfIDs[26],
+                           Evans_TBM1024_D30 = listOfIDs[27],
+                           Evans_TBM1024_WO_D15 = listOfIDs[28]
+)
+CompileExperiment(sampleIDsForTBM1024, tableOfSNPs, tableOfSNPsSmallVariants, "TBM1024_noMultipleFreqHotSpotDetails",
+                  germlineVariantIDs, UBOneVariantIDs, ruleTwovariantIDs)
+
+# CIP256
+sampleIDsForCIP256 = list(WT_Zero = listOfIDs[1],
+                          Evans_WT_D30 = listOfIDs[3],
+                          Evans_TCIP256_D11 = listOfIDs[29],
+                          Evans_CIP256_D19 = listOfIDs[30]
+)
+CompileExperiment(sampleIDsForCIP256, tableOfSNPs, tableOfSNPsSmallVariants, "CIP256_noMultipleFreqHotSpotDetails",
+                  germlineVariantIDs, UBOneVariantIDs, ruleTwovariantIDs)
  
 ### Draw some lines 
 # experimentPoints <- names(compiledExperimentTable)[c(8, 10, 12, 14, 16)]

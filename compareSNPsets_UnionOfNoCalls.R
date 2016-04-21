@@ -12,7 +12,7 @@ extraStatsTVC <- function(tableOfSNPs) {
 }
 
 path = "/zfs/datastore0/group_root/MAD-RBAB/02_Collaborators/MAD1117-Ter_Kuile/MAD1117-P001-gDNA_sequencing/MAD1117-P001-E001_2014_32x_gDNA_Yanfang_svleeuw1/Scratch/reRun/VCFCompiled/"
-listOfFiles <- grep("vcf1$", dir(path), value=TRUE)
+listOfFiles <- grep("vcf$", dir(path), value=TRUE)
 
 # 1. Read all variant files
 FetchFilesInTable <- function(listOfFiles, path){
@@ -41,7 +41,7 @@ FetchFilesInTable <- function(listOfFiles, path){
       # assign filename as ID to samples
       Sample$ID <- paste0("V",i)
       
-      # add aditonal variabel to filter out tri-allelic variants
+      # add aditonal variable to filter out tri-allelic variants
       Sample$POS2<-paste(Sample$POS,Sample$REF,Sample$ALT,sep="_")
       
       # add variant type (SNP/DEL/INS)
@@ -55,96 +55,33 @@ FetchFilesInTable <- function(listOfFiles, path){
   return(tableOfSNPs)
 }
 
-oskarTableOfSNPs <- FetchFilesInTable(listOfFiles, path)
-uniqueSNPID <- paste(oskarTableOfSNPs[,1], oskarTableOfSNPs[,2], oskarTableOfSNPs[,3], sep="_")
-SNPIDsTableOskar <- data.frame(uniqueSNPID=uniqueSNPID, ID=oskarTableOfSNPs$ID) 
 
-oskarTableOfSNPsStats <- extraStatsTVC(oskarTableOfSNPs)
-oskarSNPFreq <- as.numeric(oskarTableOfSNPsStats$SNPFreq)
-mean(oskarSNPFreq, na.rm = T)
-hist(oskarSNPFreq, breaks = 100)
-oskarSNPQual <- as.numeric(oskarTableOfSNPsStats$QUAL)
-mean(oskarSNPQual)
-hist(oskarSNPQual, breaks = 100)
+tableOfSNPs <- FetchFilesInTable(listOfFiles, path)
+tableOfNoCalls <- FetchFilesInTable(listOfFiles, path)
+nrow(tableOfSNPs)
 
-IoannisTableOfSNPs <- FetchFilesInTable("Yanfang_Ioannis_V")
-uniqueSNPID <- paste(IoannisTableOfSNPs[,1], IoannisTableOfSNPs[,2], IoannisTableOfSNPs[,3], sep="_")
-SNPIDsTableIoannis <- data.frame(uniqueSNPID=uniqueSNPID, ID=IoannisTableOfSNPs$ID) 
-
-IoannisTableOfSNPsStats <- extraStatsTVC(IoannisTableOfSNPs)
-ioannisSNPFreq <- as.numeric(IoannisTableOfSNPsStats$SNPFreq)
-mean(ioannisSNPFreq, na.rm = T)
-hist(ioannisSNPFreq, breaks = 100)
-ioannisSNPQual <- as.numeric(IoannisTableOfSNPsStats$QUAL)
-mean(ioannisSNPQual)
-hist(ioannisSNPQual, breaks = 100)
-
-a <- SNPIDsTable[ SNPIDsTable$ID=="V7",][,1]
-b <- SNPIDsTable[ SNPIDsTable$ID=="V8",][,1]
-length(b)
-
-pairWise <- function(setA, setB){
-  boolean <- setA %in% setB  
-  common <- setA[boolean]
-  setAOnly <- setA[!boolean]
-  setBOnly <- setB[! setB %in% setA ]
-  overlap = list(common = common, setAOnly = setAOnly, setBOnly = setBOnly)
-  return(overlap)
+# compile a vector with a unique identifier for each SNP
+uniqueSNPID <- paste(tableOfSNPs[,1], tableOfSNPs[,2], tableOfSNPs[,3], sep="_")
+uniqueVariantsInTable <- unique(uniqueSNPID)
+# number of unique variants
+length(uniqueVariantsInTable)
+# number of variants per sample
+uniqueSampleIDs <- unique(tableOfSNPs$ID)
+sampleSizePerID <- vector()
+for (sample in uniqueSampleIDs){
+  sampleSizePerID <- c(sampleSizePerID, nrow(tableOfSNPs[ tableOfSNPs$ID == sample, ]))
 }
 
-common <- as.character(SNPIDsTable[ SNPIDsTable$ID=="V1",][,1])
-for (i in 2:5) {
-  ID <- paste0("V",i)
-  setB <- as.character(SNPIDsTable[ SNPIDsTable$ID == ID,][,1])
-  common <- pairWise(common, setB)
-  print(length(common))
-}
-  
+# min and max number of variants per sample
+min(sampleSizePerID)
+max(sampleSizePerID)
 
-  for (i in 2:5) {
-    IDA <- paste0("V",i-1)
-    IDB <- paste0("V",i)
-    setA <- as.character(SNPIDsTable[ SNPIDsTable$ID == IDA,][,1])
-    setB <- as.character(SNPIDsTable[ SNPIDsTable$ID == IDB,][,1])
-    common <- pairWise(setA, setB)
-    print(paste("common SNPs between version", i-1 , "and", i, "is", length(common), ". Version", i-1 , 
-                "length:", length(setA), "Version",i , "length", length(setB)))
-  }
+length(unique(uniqueSNPID))/nrow(tableOfSNPs)
 
-############### $$$$$$$$$$$$$$$$$$$$$$$$$$ ####################
-# compare SNP sets and decide on their qiality
-setA <- as.character(SNPIDsTableOskar[ SNPIDsTableOskar$ID == "V1",][,1])
-setB <- as.character(SNPIDsTableIoannis[ SNPIDsTableIoannis$ID == "V5",][,1])
+##################### $$$$$$$$$$$$$$$$$$$$$$ ######################
+hist(tableOfSNPs[ tableOfSNPs$CHROM == "gi|383748882|gb|AJKG01000054.1|_consensus", ]$POS, breaks=100)
+hist(tableOfNoCalls[ tableOfNoCalls$CHROM == "gi|383748882|gb|AJKG01000054.1|_consensus", ]$POS, breaks=100)
 
-common <- pairWise(setA, setB)
+hist(tableOfSNPs[ tableOfSNPs$CHROM == "gi|383748912|gb|AJKG01000024.1|_consensus", ]$POS, breaks=100)
+hist(tableOfNoCalls[ tableOfNoCalls$CHROM == "gi|383748912|gb|AJKG01000024.1|_consensus", ]$POS, breaks=100)
 
-# count SNPs and indels occurences in the sets
-
-setAVar <- common$setAOnly
-setBVar <- common$setBOnly
-common <- common$common
-
-varTypeSetA <- substr(setAVar, nchar(setAVar)-2, nchar(setAVar))
-varTypeSetB <- substr(setBVar, nchar(setBVar)-2, nchar(setBVar))
-varTypeCommon <- substr(common, nchar(common)-2, nchar(common))
-
-# Number of SNPs in set A 
-length(which(varTypeSetA == "SNP"))
-length(which(varTypeSetA == "SNP"))/length(varTypeSetA)
-# number of Indels in set A
-length(varTypeSetA) - length(which(varTypeSetA == "SNP"))
-(length(varTypeSetA) - length(which(varTypeSetA == "SNP")))/length(varTypeSetA)
-
-# Number of SNPs in set B 
-length(which(varTypeSetB == "SNP"))
-length(which(varTypeSetB == "SNP"))/length(varTypeSetB)
-# Number of Indels in set B 
-length(varTypeSetB) - length(which(varTypeSetB == "SNP"))
-(length(varTypeSetB) - length(which(varTypeSetB == "SNP")))/length(varTypeSetB)
-
-# Number of SNPs in overlap
-length(which(varTypeCommon == "SNP"))
-length(which(varTypeCommon == "SNP"))/length(varTypeCommon)
-# Number of Indels in overlap 
-length(varTypeCommon) - length(which(varTypeCommon == "SNP"))
-(length(varTypeCommon) - length(which(varTypeCommon == "SNP")))/length(varTypeCommon)

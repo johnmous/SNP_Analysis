@@ -1,4 +1,4 @@
-# title: graph of collapsed fastq counts
+# title: Graphs of collapsed fastq counts
 # Author: Ioannis Moustakas, i.moustakas@uva.nl
 
 numberOfReads <- vector()
